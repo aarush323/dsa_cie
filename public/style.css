@@ -421,12 +421,12 @@ body {
     gap: 40px;
     pointer-events: auto;
 
-    background: rgba(15, 23, 42, 0.85);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid var(--glass-border);
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 36px;
-    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.9), inset 0 0 40px rgba(45, 212, 191, 0.05);
+    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(45, 212, 191, 0.05);
 
     transform: scale(1) translateY(0);
     transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -599,38 +599,104 @@ body {
 }
 
 .trace-step {
-    padding: 12px 16px;
-    background: var(--trace-step-bg);
-    border: 1px solid var(--glass-border);
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
     margin-bottom: 12px;
-    border-left: 3px solid var(--primary);
+    transition: all 0.3s;
+}
+
+.trace-step:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .trace-step-header {
-    font-size: 14px;
-    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.step-num {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--primary);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.step-action {
+    font-size: 15px;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    flex: 1;
 }
 
-.trace-step-header .node-name {
+.step-dist {
+    font-size: 13px;
     font-weight: 600;
+    color: var(--accent);
 }
 
-.trace-step-header .dist-value {
-    color: var(--primary);
+.trace-relax-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .trace-relax {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 4px;
-    font-family: monospace;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
 }
 
-.trace-relax.updated {
-    color: var(--accent);
+.edge-path {
+    font-family: inherit;
+    color: var(--text-secondary);
+    font-weight: 500;
+    width: 140px;
+}
+
+.edge-detail {
+    color: var(--text-secondary);
+    opacity: 0.7;
+    width: 60px;
+}
+
+.action-icon {
+    font-weight: 800;
+}
+
+.updated .action-icon {
+    color: var(--success);
+}
+
+.skipped .action-icon {
+    color: var(--danger);
+    opacity: 0.7;
+}
+
+.new-dist {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.skip-dist {
+    color: var(--text-secondary);
+    font-style: italic;
+    opacity: 0.6;
+}
+
+.no-update {
+    color: var(--text-secondary);
+    font-style: italic;
+    opacity: 0.5;
 }
 
 .btn-secondary {

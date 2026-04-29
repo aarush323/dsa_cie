@@ -316,19 +316,25 @@ function showResultModal(data) {
         let relaxHtml = "";
         step.relaxations.forEach(r => {
             if (r.to === "") {
-                relaxHtml += `<div class="trace-relax no-update">No edge updates</div>`;
+                relaxHtml += `<div class="trace-relax no-update">No outgoing edges evaluated.</div>`;
             } else {
-                relaxHtml += `<div class="trace-relax ${r.updated ? 'updated' : ''}">` +
-                    `${r.from} ➔ ${r.to} (${r.weight}km) → Total: ${r.total}` +
+                relaxHtml += `<div class="trace-relax ${r.updated ? 'updated' : 'skipped'}">` +
+                    `<span class="edge-path">${r.from} ➔ ${r.to}</span> ` +
+                    `<span class="edge-detail">(+${r.weight}km)</span> ` +
+                    `${r.updated ? `<span class="action-icon">✓</span> <span class="new-dist">New distance: ${r.total}</span>` : `<span class="action-icon">✗</span> <span class="skip-dist">Kept existing</span>`}` +
                     `</div>`;
             }
         });
 
         stepEl.innerHTML = `
             <div class="trace-step-header">
-                Step ${idx + 1}: Visiting <span class="node-name">${step.node}</span> <span class="dist-value">(dist: ${step.distance})</span>
+                <span class="step-num">Step ${idx + 1}</span>
+                <span class="step-action">Visiting <strong>${step.node}</strong></span>
+                <span class="step-dist">Current Dist: ${step.distance}</span>
             </div>
-            ${relaxHtml}
+            <div class="trace-relax-list">
+                ${relaxHtml}
+            </div>
         `;
         traceContainer.appendChild(stepEl);
     });
