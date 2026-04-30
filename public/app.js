@@ -1,17 +1,25 @@
 let graphData = null;
 let sourceNode = null;
 let endNode = null;
+let trafficCondition = "none";
+let weatherCondition = "clear";
+let activeEdgeConditions = "all";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 async function loadGraph() {
+    console.log("Loading graph...");
     try {
         const res = await fetch("/api/graph");
         graphData = await res.json();
+        console.log("Graph data received:", graphData);
 
-        // Dynamically adjust SVG viewbox based on node extremes to center map nicely
+        if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
+            console.error("No nodes in graph data!");
+            return;
+        }
+
         autoScaleSVG();
-
         populateDropdowns();
         drawGraph();
     } catch (e) {
@@ -31,24 +39,30 @@ function autoScaleSVG() {
         if (n.y > maxY) maxY = n.y;
     });
 
-    const padding = 120;
-    svg.setAttribute("viewBox", `${minX - padding} ${minY - padding} ${(maxX - minX) + padding * 2} ${(maxY - minY) + padding * 2}`);
+    const padding = 140;
+    const viewboxStr = `${minX - padding} ${minY - padding} ${(maxX - minX) + padding * 2} ${(maxY - minY) + padding * 2}`;
+    console.log("Setting SVG viewBox:", viewboxStr);
+    svg.setAttribute("viewBox", viewboxStr);
 }
 
 function populateDropdowns() {
     const src = document.getElementById("source-select");
     const dst = document.getElementById("dest-select");
+    const edges = document.getElementById("edge-select");
 
-    // Add default placeholders
-    src.innerHTML = `<option value="" disabled selected>Select Starting Point...</option>`;
-    dst.innerHTML = `<option value="" disabled selected>Select Destination...</option>`;
+    src.innerHTML = `<option value="" disabled selected>Starting Point...</option>`;
+    dst.innerHTML = `<option value="" disabled selected>Destination...</option>`;
+    edges.innerHTML = `<option value="all">All Routes (Global)</option>`;
 
     graphData.nodes.forEach((n) => {
         src.innerHTML += `<option value="${n.name}">${n.name}</option>`;
         dst.innerHTML += `<option value="${n.name}">${n.name}</option>`;
     });
 
-    // Event listeners for selects
+    graphData.edges.forEach(e => {
+        edges.innerHTML += `<option value="${edgeKey(e.from, e.to)}">${e.from} ↔ ${e.to}</option>`;
+    });
+
     src.addEventListener('change', (e) => {
         if (sourceNode) clearNodeStyling(sourceNode);
         sourceNode = e.target.value;
@@ -68,25 +82,16 @@ function drawGraph() {
     const svg = document.getElementById("graph-svg");
     svg.innerHTML = "";
 
-    // Defs for filters
     const defs = createSVG("defs");
-    // Drop shadow filter for nodes
-    const filter = createSVG("filter", { id: "drop-shadow" });
-    filter.innerHTML = `
-        <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
-        <feOffset dx="0" dy="4" result="offsetblur"/>
-        <feComponentTransfer>
-            <feFuncA type="linear" slope="0.5"/>
-        </feComponentTransfer>
-        <feMerge>
-            <feMergeNode/>
-            <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-    `;
+    const filter = createSVG("filter", { id: "path-glow" });
+    filter.innerHTML = `<feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>`;
     defs.appendChild(filter);
+
+    const pinShadow = createSVG("filter", { id: "pin-shadow", x: "-50%", y: "-50%", width: "200%", height: "200%" });
+    pinShadow.innerHTML = `<feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.3"/>`;
+    defs.appendChild(pinShadow);
     svg.appendChild(defs);
 
-    // Draw edges first (so they are beneath nodes)
     const edgeGroup = createSVG("g", { id: "edges" });
     graphData.edges.forEach(e => {
         const from = graphData.nodes.find(n => n.name === e.from);
@@ -100,22 +105,21 @@ function drawGraph() {
         edgeGroup.appendChild(line);
     });
 
-    // Draw weights grouped cleanly
     graphData.edges.forEach(e => {
         const from = graphData.nodes.find(n => n.name === e.from);
         const to = graphData.nodes.find(n => n.name === e.to);
         const mx = (from.x + to.x) / 2;
         const my = (from.y + to.y) / 2;
-
         const bg = createSVG("rect", {
-            x: mx - 18, y: my - 12,
-            width: 36, height: 16,
-            rx: 6, fill: "var(--edge-bg)"
+            x: mx - 22, y: my - 12,
+            width: 44, height: 20,
+            rx: 6, fill: "var(--edge-bg)",
+            stroke: "var(--glass-border)",
+            "stroke-width": 1
         });
         edgeGroup.appendChild(bg);
-
         const text = createSVG("text", {
-            x: mx, y: my,
+            x: mx, y: my + 5,
             class: "edge-weight",
             id: `weight-${edgeKey(e.from, e.to)}`
         });
@@ -124,38 +128,31 @@ function drawGraph() {
     });
 
     svg.appendChild(edgeGroup);
-
-    // Dynamic paths layer (will draw on top of base edges)
     svg.appendChild(createSVG("g", { id: "dynamic-paths" }));
 
-    // Draw nodes
     const nodeGroup = createSVG("g", { id: "nodes" });
     graphData.nodes.forEach(n => {
         const g = createSVG("g", {
             class: "graph-node",
             id: `node-${n.name.replace(/\s/g, "")}`,
+            style: "cursor: pointer"
         });
-
-        // Click handler inside closure to maintain scope
         g.addEventListener('click', () => onNodeClick(n.name));
-
-        const circle = createSVG("circle", {
-            cx: n.x, cy: n.y, r: 16,
+        const pin = createSVG("path", {
+            d: `M ${n.x} ${n.y} m 0 -22 c -7.7 0 -14 6.3 -14 14 c 0 10.5 14 26 14 26 s 14 -15.5 14 -26 c 0 -7.7 -6.3 -14 -14 -14 z`,
             class: "node-circle",
-            fill: "var(--node-bg)",
-            stroke: "var(--node-border)",
-            "stroke-width": 2,
-            filter: "url(#drop-shadow)"
+            fill: "#60a5fa",
+            stroke: "#ffffff",
+            "stroke-width": 3,
+            filter: "url(#pin-shadow)"
         });
-        g.appendChild(circle);
-
+        g.appendChild(pin);
         const label = createSVG("text", {
-            x: n.x, y: n.y + 32,
+            x: n.x, y: n.y + 35,
             class: "node-label"
         });
         label.textContent = n.name;
         g.appendChild(label);
-
         nodeGroup.appendChild(g);
     });
     svg.appendChild(nodeGroup);
@@ -171,7 +168,6 @@ function onNodeClick(name) {
         document.getElementById("dest-select").value = name;
         highlightNode(name, "end");
     } else {
-        // Reset and start over
         clearSelection();
         sourceNode = name;
         document.getElementById("source-select").value = name;
@@ -189,7 +185,7 @@ function checkPromptState() {
         prompt.textContent = "Now click your destination on the map";
         prompt.classList.remove("hidden");
     } else {
-        prompt.textContent = "Ready! Click 'Find Shortest Route'";
+        prompt.innerHTML = `Ready! <span style="color:var(--accent)">${sourceNode} ➔ ${endNode}</span>`;
         prompt.classList.remove("hidden");
     }
 }
@@ -199,9 +195,9 @@ function clearNodeStyling(name) {
     const g = document.getElementById(id);
     if (g) {
         g.classList.remove("node-start", "node-end");
-        const circle = g.querySelector(".node-circle");
-        circle.setAttribute("fill", "var(--node-bg)");
-        circle.setAttribute("stroke", "var(--node-border)");
+        const pin = g.querySelector(".node-circle");
+        pin.setAttribute("fill", "#60a5fa");
+        pin.setAttribute("stroke", "#ffffff");
     }
 }
 
@@ -219,128 +215,142 @@ function highlightNode(name, type) {
     const id = `node-${name.replace(/\s/g, "")}`;
     const g = document.getElementById(id);
     if (!g) return;
-
     g.classList.add(type === "start" ? "node-start" : "node-end");
-    const circle = g.querySelector(".node-circle");
-
-    // Explicit color settings handled primarily by CSS classes now
-    // CSS uses !important for these to enforce them properly
-    const highlightFill = type === "start" ? "var(--success)" : "var(--danger)";
-    const highlightStroke = type === "start" ? "var(--success-trans)" : "var(--danger-trans)";
-    circle.setAttribute("fill", highlightFill);
-    circle.setAttribute("stroke", highlightStroke);
+    const pin = g.querySelector(".node-circle");
+    const highlightColor = type === "start" ? "var(--success)" : "var(--danger)";
+    pin.setAttribute("fill", highlightColor);
 }
 
 function clearPath() {
     document.getElementById("dynamic-paths").innerHTML = "";
     document.querySelectorAll(".graph-edge").forEach(el => el.classList.remove("highlighted"));
-    document.querySelectorAll(".edge-weight").forEach(el => el.classList.remove("highlighted"));
+    document.querySelectorAll(".edge-weight").forEach(el => el.classList.remove("highlighted", "modified"));
 }
 
-document.getElementById("find-route-btn").addEventListener("click", async () => {
-    if (!sourceNode || !endNode || sourceNode === endNode) {
-        // Maybe highlight or shake the input box gently
-        document.getElementById("selection-prompt").textContent = "Please select distinct Source and Destination!";
-        return;
-    }
+// Conditions
+document.getElementById("conditions-toggle").addEventListener("click", () => {
+    document.querySelector(".conditions-section").classList.toggle("open");
+});
 
+document.getElementById("apply-conditions-btn").addEventListener("click", () => {
+    trafficCondition = document.getElementById("traffic-select").value;
+    weatherCondition = document.getElementById("weather-select").value;
+    activeEdgeConditions = document.getElementById("edge-select").value;
+    applyVisualConditions();
+    document.querySelector(".conditions-section").classList.remove("open");
+});
+
+document.getElementById("reset-conditions-btn").addEventListener("click", () => {
+    trafficCondition = "none";
+    weatherCondition = "clear";
+    activeEdgeConditions = "all";
+    document.getElementById("traffic-select").value = "none";
+    document.getElementById("weather-select").value = "clear";
+    document.getElementById("edge-select").value = "all";
+    document.querySelectorAll(".edge-weight").forEach(el => el.classList.remove("modified"));
+    document.querySelectorAll(".edge-condition-glow").forEach(el => el.remove());
+    document.querySelector(".conditions-section").classList.remove("open");
+    clearPath();
+});
+
+function applyVisualConditions() {
+    document.querySelectorAll(".edge-condition-glow").forEach(el => el.remove());
+    const edgeGroup = document.getElementById("edges");
+    graphData.edges.forEach(e => {
+        const key = edgeKey(e.from, e.to);
+        const weightEl = document.getElementById(`weight-${key}`);
+        if (activeEdgeConditions === "all" || activeEdgeConditions === key) {
+            if (trafficCondition !== "none" || weatherCondition !== "clear") {
+                weightEl.classList.add("modified");
+                const from = graphData.nodes.find(n => n.name === e.from);
+                const to = graphData.nodes.find(n => n.name === e.to);
+                const trafficColor = {
+                    "none": "transparent",
+                    "light": "rgba(34, 197, 94, 0.4)",
+                    "moderate": "rgba(245, 158, 11, 0.5)",
+                    "heavy": "rgba(239, 68, 68, 0.6)",
+                    "jam": "rgba(220, 38, 38, 0.7)"
+                }[trafficCondition] || "rgba(59, 130, 246, 0.3)";
+                const glow = createSVG("line", {
+                    x1: from.x, y1: from.y,
+                    x2: to.x, y2: to.y,
+                    stroke: trafficColor,
+                    "stroke-width": 12,
+                    class: "edge-condition-glow"
+                });
+                edgeGroup.insertBefore(glow, weightEl.previousSibling);
+            }
+        }
+    });
+}
+
+// Find Route
+document.getElementById("find-route-btn").addEventListener("click", async () => {
+    if (!sourceNode || !endNode || sourceNode === endNode) return;
     const btn = document.getElementById("find-route-btn");
     btn.disabled = true;
-    btn.innerHTML = `Calculating Path...`;
-
     try {
-        const res = await fetch(`/api/find-route?source=${encodeURIComponent(sourceNode)}&destination=${encodeURIComponent(endNode)}`, { method: "POST" });
+        let url = `/api/find-route?source=${encodeURIComponent(sourceNode)}&destination=${encodeURIComponent(endNode)}`;
+        if (trafficCondition !== "none") url += `&traffic=${trafficCondition}`;
+        if (weatherCondition !== "clear") url += `&weather=${weatherCondition}`;
+        if (activeEdgeConditions) url += `&edge=${activeEdgeConditions}`;
+        const res = await fetch(url, { method: "POST" });
         const data = await res.json();
-
         if (data.totalDistance >= 0) {
             drawResultPath(data);
             showResultModal(data);
         }
     } catch (e) {
-        console.error("Failed to find route", e);
+        console.error(e);
     }
-
     btn.disabled = false;
-    btn.innerHTML = `Find Shortest Route`;
 });
 
 function drawResultPath(data) {
     clearPath();
-
-    // Base edge highlights
     data.shortestPathEdges.forEach(key => {
         const edge = document.getElementById(`edge-${key}`);
-        const weight = document.getElementById(`weight-${key}`);
         if (edge) edge.classList.add("highlighted");
-        if (weight) weight.classList.add("highlighted");
     });
-
-    // Draw connected dynamic path over layers
     const dynamicGroup = document.getElementById("dynamic-paths");
-
     let pathString = "";
     data.path.forEach((nodeName, idx) => {
         const p = graphData.nodes.find(n => n.name === nodeName);
         if (idx === 0) pathString += `M ${p.x} ${p.y} `;
         else pathString += `L ${p.x} ${p.y} `;
     });
-
-    const animatedLine = createSVG("path", {
-        d: pathString,
-        class: "path-line"
-    });
-
+    const animatedLine = createSVG("path", { d: pathString, class: "path-line" });
     dynamicGroup.appendChild(animatedLine);
 }
 
 function showResultModal(data) {
     const modal = document.getElementById("modal-overlay");
     const wrapper = document.getElementById("result-wrapper");
-
-    // Set properties
-    const pathHtml = data.path.map((name, i) => {
-        return `<span>${name}</span>${i < data.path.length - 1 ? `<span class="arrow">➔</span>` : ""}`;
-    }).join("");
-
+    const pathHtml = data.path.map((name, i) => `<span class="path-node">${name}</span>${i < data.path.length - 1 ? `<span class="arrow">➔</span>` : ""}`).join("");
     document.getElementById("route-path").innerHTML = pathHtml;
-    document.getElementById("route-distance").innerHTML = `${data.totalDistance} <span class="unit">km</span>`;
+    document.getElementById("route-distance").innerHTML = `${data.totalDistance}<span class="unit">km</span>`;
 
-    // Set trace
+    document.getElementById("conditions-stat").style.display = (trafficCondition !== "none" || weatherCondition !== "clear") ? "block" : "none";
+    const badgeWrap = document.getElementById("active-conditions-badge");
+    badgeWrap.innerHTML = "";
+    if (trafficCondition !== "none") badgeWrap.innerHTML += `<span class="condition-tag">Traffic: ${trafficCondition}</span>`;
+    if (weatherCondition !== "clear") badgeWrap.innerHTML += `<span class="condition-tag weather-tag">Weather: ${weatherCondition}</span>`;
+
     const traceContainer = document.getElementById("trace-steps");
     traceContainer.innerHTML = "";
-
     data.trace.forEach((step, idx) => {
         const stepEl = document.createElement("div");
         stepEl.className = "trace-step";
-
         let relaxHtml = "";
         step.relaxations.forEach(r => {
-            if (r.to === "") {
-                relaxHtml += `<div class="trace-relax no-update">No outgoing edges evaluated.</div>`;
-            } else {
-                relaxHtml += `<div class="trace-relax ${r.updated ? 'updated' : 'skipped'}">` +
-                    `<span class="edge-path">${r.from} ➔ ${r.to}</span> ` +
-                    `<span class="edge-detail">(+${r.weight}km)</span> ` +
-                    `${r.updated ? `<span class="action-icon">✓</span> <span class="new-dist">New distance: ${r.total}</span>` : `<span class="action-icon">✗</span> <span class="skip-dist">Kept existing</span>`}` +
-                    `</div>`;
-            }
+            relaxHtml += `<div class="trace-relax ${r.updated ? 'updated' : 'skipped'}">` +
+                `<span class="edge-path">${r.from} ➔ ${r.to}</span> ` +
+                `<span class="edge-detail">(+${r.weight}km)</span> ` +
+                `<span class="${r.updated ? 'new-dist' : 'skip-dist'}">${r.updated ? `Dist: ${r.total}` : 'No improvement'}</span></div>`;
         });
-
-        stepEl.innerHTML = `
-            <div class="trace-step-header">
-                <span class="step-num">Step ${idx + 1}</span>
-                <span class="step-action">Visiting <strong>${step.node}</strong></span>
-                <span class="step-dist">Current Dist: ${step.distance}</span>
-            </div>
-            <div class="trace-relax-list">
-                ${relaxHtml}
-            </div>
-        `;
+        stepEl.innerHTML = `<div class="trace-step-header"><span class="step-num">${idx + 1}</span><span class="step-action">${step.node}</span><span class="step-dist">${step.distance}km</span></div><div class="trace-relax-list">${relaxHtml}</div>`;
         traceContainer.appendChild(stepEl);
     });
-
-    // Show
-    document.getElementById("selection-prompt").classList.add("hidden");
     modal.classList.remove("hidden");
     wrapper.classList.remove("hidden");
 }
@@ -348,54 +358,31 @@ function showResultModal(data) {
 function hideModal() {
     document.getElementById("modal-overlay").classList.add("hidden");
     document.getElementById("result-wrapper").classList.add("hidden");
-    checkPromptState();
 }
 
 document.getElementById("close-modal").addEventListener("click", hideModal);
-document.getElementById("action-replan").addEventListener("click", () => {
-    hideModal();
-    clearSelection();
-    checkPromptState();
-});
+document.getElementById("action-replan").addEventListener("click", () => { hideModal(); clearSelection(); });
 
 function createSVG(tag, attrs = {}) {
     const el = document.createElementNS(SVG_NS, tag);
-    for (const [k, v] of Object.entries(attrs)) {
-        el.setAttribute(k, v);
-    }
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
     return el;
 }
 
-function edgeKey(a, b) {
-    return a < b ? `${a}-${b}` : `${b}-${a}`;
-}
+function edgeKey(a, b) { return a < b ? `${a}-${b}` : `${b}-${a}`; }
 
-// Theme Management
+// Theme Toggle
 const themeToggleBtn = document.getElementById('theme-toggle');
 const sunIcon = document.querySelector('.theme-icon-sun');
 const moonIcon = document.querySelector('.theme-icon-moon');
-
 function setTheme(themeName) {
     document.documentElement.setAttribute('data-theme', themeName);
     localStorage.setItem('theme', themeName);
-    if (themeName === 'light') {
-        sunIcon.classList.remove('hidden');
-        moonIcon.classList.add('hidden');
-    } else {
-        sunIcon.classList.add('hidden');
-        moonIcon.classList.remove('hidden');
-    }
+    if (themeName === 'light') { sunIcon.classList.remove('hidden'); moonIcon.classList.add('hidden'); }
+    else { sunIcon.classList.add('hidden'); moonIcon.classList.remove('hidden'); }
 }
-
-// Initialize theme from storage or default to dark
 const currentTheme = localStorage.getItem('theme') || 'dark';
 setTheme(currentTheme);
+themeToggleBtn.addEventListener('click', () => { setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'); });
 
-themeToggleBtn.addEventListener('click', () => {
-    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    setTheme(isDark ? 'light' : 'dark');
-});
-
-// Init
-checkPromptState();
 loadGraph();

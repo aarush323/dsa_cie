@@ -3,127 +3,165 @@ import java.util.*;
 
 public class SmartGPS {
 
+    /**
+     * TEXTBOOK DATA STRUCTURES
+     */
     static class Location {
         String name;
-        int x, y;
+        int x, y, id; // Node ID for Adjacency List
 
-        Location(String name, int x, int y) {
+        Location(String name, int x, int y, int id) {
             this.name = name;
             this.x = x;
             this.y = y;
+            this.id = id;
         }
     }
 
     static class Edge {
-        String to;
-        double weight;
+        int v; // Target node ID
+        double w; // Weight
 
-        Edge(String to, double weight) {
-            this.to = to;
-            this.weight = weight;
+        Edge(int v, double w) {
+            this.v = v;
+            this.w = w;
         }
     }
 
-    static class RouteNode implements Comparable<RouteNode> {
-        String name;
+    static class RouteNode {
+        int u;
         double dist;
 
-        RouteNode(String name, double dist) {
-            this.name = name;
+        RouteNode(int u, double dist) {
+            this.u = u;
             this.dist = dist;
-        }
-
-        @Override
-        public int compareTo(RouteNode other) {
-            return Double.compare(this.dist, other.dist);
         }
     }
 
     static class Graph {
-        Map<String, List<Edge>> adj = new HashMap<>();
-        List<Location> allLocations = new ArrayList<>();
+        // FORMAL ADJACENCY LIST: List of Lists (indexed by node ID)
+        List<List<Edge>> adj = new ArrayList<>();
+        List<Location> locations = new ArrayList<>();
+        Map<String, Integer> nameToId = new HashMap<>();
 
-        void addLocation(Location loc) {
-            adj.put(loc.name, new ArrayList<>());
-            allLocations.add(loc);
+        void addLocation(String name, int x, int y) {
+            int id = locations.size();
+            Location loc = new Location(name, x, y, id);
+            locations.add(loc);
+            nameToId.put(name, id);
+            adj.add(new ArrayList<>());
         }
 
         void addEdge(String a, String b, double weight) {
-            adj.get(a).add(new Edge(b, weight));
-            adj.get(b).add(new Edge(a, weight));
+            int u = nameToId.get(a);
+            int v = nameToId.get(b);
+            adj.get(u).add(new Edge(v, weight));
+            adj.get(v).add(new Edge(u, weight));
         }
 
-        Map<String, Object> findShortestPath(String source, String destination) {
-            Map<String, Double> dist = new HashMap<>();
-            Map<String, String> parent = new HashMap<>();
-            PriorityQueue<RouteNode> pq = new PriorityQueue<>();
-            Set<String> visited = new LinkedHashSet<>();
+        /**
+         * PURE DIJKSTRA (Explain this in your viva!)
+         * Matches your snippet exactly.
+         */
+        public Map<String, Object> findShortestPath(String srcName, String destName, double tM, double wM, String eK) {
+            int n = locations.size();
+            int src = nameToId.get(srcName);
+            int dest = nameToId.get(destName);
+
+            double[] dist = new double[n]; // Integer/Double array for distances
+            int[] parent = new int[n]; // To store shortest path tree
+            boolean[] visited = new boolean[n];
+
+            Arrays.fill(dist, Double.MAX_VALUE);
+            Arrays.fill(parent, -1);
+
+            // PriorityQueue with custom comparator: (a, b) -> dist[a] - dist[b]
+            PriorityQueue<RouteNode> pq = new PriorityQueue<>((a, b) -> Double.compare(a.dist, b.dist));
+
+            dist[src] = 0;
+            pq.add(new RouteNode(src, 0));
+
+            // Trace for UI (Noisy part hidden in helper)
             List<Map<String, Object>> trace = new ArrayList<>();
 
-            for (Location loc : allLocations) {
-                dist.put(loc.name, Double.POSITIVE_INFINITY);
-            }
-            dist.put(source, 0.0);
-            pq.add(new RouteNode(source, 0.0));
-
             while (!pq.isEmpty()) {
-                RouteNode current = pq.poll();
-                String u = current.name;
+                RouteNode curr = pq.poll();
+                int u = curr.u;
 
-                if (visited.contains(u)) continue;
-                visited.add(u);
+                if (visited[u])
+                    continue;
+                visited[u] = true;
 
-                List<Map<String, Object>> relaxations = new ArrayList<>();
-                for (Edge e : adj.get(u)) {
-                    if (!visited.contains(e.to)) {
-                        double newDist = dist.get(u) + e.weight;
-                        if (newDist < dist.get(e.to)) {
-                            dist.put(e.to, newDist);
-                            parent.put(e.to, u);
-                            pq.add(new RouteNode(e.to, newDist));
-                            Map<String, Object> r = new LinkedHashMap<>();
-                            r.put("from", u);
-                            r.put("to", e.to);
-                            r.put("weight", (int) e.weight);
-                            r.put("total", (int) newDist);
-                            r.put("updated", true);
-                            relaxations.add(r);
-                        }
+                List<Map<String, Object>> stepRels = new ArrayList<>();
+
+                // FOR EACH NEIGHBOR V OF U IN ADJACENCY LIST
+                for (Edge edge : adj.get(u)) {
+                    int v = edge.v;
+                    double weight = getEffectiveWeight(u, v, edge.w, tM, wM, eK);
+
+                    // RELAXATION: if (dist[u] + weight < dist[v])
+                    if (dist[u] + weight < dist[v]) {
+                        dist[v] = dist[u] + weight;
+                        parent[v] = u;
+                        pq.add(new RouteNode(v, dist[v]));
+                        recordTrace(stepRels, u, v, weight, dist[v], true);
+                    } else {
+                        recordTrace(stepRels, u, v, weight, dist[v], false);
                     }
                 }
 
-                if (relaxations.isEmpty()) {
-                    Map<String, Object> r = new LinkedHashMap<>();
-                    r.put("from", u);
-                    r.put("to", "");
-                    r.put("weight", 0);
-                    r.put("total", (int) (double) dist.get(u));
-                    r.put("updated", false);
-                    relaxations.add(r);
-                }
-
-                Map<String, Object> step = new LinkedHashMap<>();
-                step.put("node", u);
-                step.put("distance", (int) (double) dist.get(u));
-                step.put("relaxations", relaxations);
-                trace.add(step);
-
-                if (u.equals(destination)) break;
+                finalizeStepTrace(trace, u, dist[u], stepRels);
+                if (u == dest)
+                    break;
             }
 
+            return buildResult(dist[dest], parent, src, dest, trace);
+        }
+
+        // --- DSA HELPERS ---
+
+        private double getEffectiveWeight(int u, int v, double base, double tM, double wM, String eK) {
+            String uName = locations.get(u).name;
+            String vName = locations.get(v).name;
+            String key = uName.compareTo(vName) < 0 ? uName + "-" + vName : vName + "-" + uName;
+            boolean isAffected = (eK == null || eK.equals("all") || eK.equals(key));
+            return base * (isAffected ? tM * wM : 1.0);
+        }
+
+        private void recordTrace(List<Map<String, Object>> list, int u, int v, double w, double total, boolean up) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("from", locations.get(u).name);
+            r.put("to", locations.get(v).name);
+            r.put("weight", (int) w);
+            r.put("total", (int) total);
+            r.put("updated", up);
+            list.add(r);
+        }
+
+        private void finalizeStepTrace(List<Map<String, Object>> trace, int uId, double d,
+                List<Map<String, Object>> rels) {
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("node", locations.get(uId).name);
+            step.put("distance", (int) d);
+            step.put("relaxations", rels);
+            trace.add(step);
+        }
+
+        private Map<String, Object> buildResult(double totalD, int[] parent, int src, int dest,
+                List<Map<String, Object>> trace) {
             List<String> path = new ArrayList<>();
-            String current = destination;
-            if (dist.get(destination) == Double.POSITIVE_INFINITY) {
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("path", new ArrayList<String>());
-                result.put("totalDistance", -1);
-                result.put("trace", trace);
-                result.put("shortestPathEdges", new ArrayList<String>());
-                return result;
+            if (totalD == Double.MAX_VALUE) {
+                Map<String, Object> emp = new LinkedHashMap<>();
+                emp.put("path", path);
+                emp.put("totalDistance", -1);
+                emp.put("trace", trace);
+                emp.put("shortestPathEdges", new ArrayList<>());
+                return emp;
             }
-            while (current != null) {
-                path.add(current);
-                current = parent.get(current);
+            int curr = dest;
+            while (curr != -1) {
+                path.add(locations.get(curr).name);
+                curr = parent[curr];
             }
             Collections.reverse(path);
 
@@ -133,33 +171,37 @@ public class SmartGPS {
                 spEdges.add(a.compareTo(b) < 0 ? a + "-" + b : b + "-" + a);
             }
 
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("path", path);
-            result.put("totalDistance", (int) (double) dist.get(destination));
-            result.put("trace", trace);
-            result.put("shortestPathEdges", spEdges);
-            return result;
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("path", path);
+            res.put("totalDistance", (int) totalD);
+            res.put("trace", trace);
+            res.put("shortestPathEdges", spEdges);
+            return res;
         }
 
         String toJson() {
             StringBuilder sb = new StringBuilder("{\"nodes\":[");
-            boolean first = true;
-            for (Location loc : allLocations) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{\"name\":\"").append(loc.name).append("\",\"x\":").append(loc.x).append(",\"y\":").append(loc.y).append("}");
+            for (int i = 0; i < locations.size(); i++) {
+                Location l = locations.get(i);
+                if (i > 0)
+                    sb.append(",");
+                sb.append("{\"name\":\"").append(l.name).append("\",\"x\":").append(l.x).append(",\"y\":").append(l.y)
+                        .append("}");
             }
             sb.append("],\"edges\":[");
-            Set<String> drawn = new HashSet<>();
-            first = true;
-            for (Location loc : allLocations) {
-                for (Edge e : adj.get(loc.name)) {
-                    String key = loc.name.compareTo(e.to) < 0 ? loc.name + "-" + e.to : e.to + "-" + loc.name;
-                    if (!drawn.contains(key)) {
-                        drawn.add(key);
-                        if (!first) sb.append(",");
-                        first = false;
-                        sb.append("{\"from\":\"").append(loc.name).append("\",\"to\":\"").append(e.to).append("\",\"weight\":").append((int) e.weight).append("}");
+            Set<String> d = new HashSet<>();
+            boolean f = true;
+            for (int u = 0; u < adj.size(); u++) {
+                for (Edge e : adj.get(u)) {
+                    String uN = locations.get(u).name, vN = locations.get(e.v).name;
+                    String k = uN.compareTo(vN) < 0 ? uN + "-" + vN : vN + "-" + uN;
+                    if (!d.contains(k)) {
+                        d.add(k);
+                        if (!f)
+                            sb.append(",");
+                        f = false;
+                        sb.append("{\"from\":\"").append(uN).append("\",\"to\":\"").append(vN).append("\",\"weight\":")
+                                .append((int) e.w).append("}");
                     }
                 }
             }
@@ -168,96 +210,70 @@ public class SmartGPS {
         }
     }
 
-    static Graph buildMap() {
-        Graph g = new Graph();
-
-        g.addLocation(new Location("PICT College",  80,  250));
-        g.addLocation(new Location("Swargate",     220, 100));
-        g.addLocation(new Location("Deccan",        220, 400));
-        g.addLocation(new Location("Pune Station",  380, 100));
-        g.addLocation(new Location("Kothrud",       380, 400));
-        g.addLocation(new Location("Aundh",         520, 250));
-
-        g.addEdge("PICT College", "Swargate",     4);
-        g.addEdge("PICT College", "Deccan",       2);
-        g.addEdge("Swargate",     "Deccan",       1);
-        g.addEdge("Swargate",     "Pune Station", 5);
-        g.addEdge("Deccan",       "Pune Station", 8);
-        g.addEdge("Deccan",       "Kothrud",     10);
-        g.addEdge("Pune Station", "Kothrud",      2);
-        g.addEdge("Pune Station", "Aundh",        6);
-        g.addEdge("Kothrud",      "Aundh",        3);
-
-        return g;
-    }
-
     public static void main(String[] args) {
-        Graph graph = buildMap();
+        Graph g = new Graph();
+        g.addLocation("PICT College", 80, 250);
+        g.addLocation("Swargate", 220, 100);
+        g.addLocation("Deccan", 220, 400);
+        g.addLocation("Pune Station", 380, 100);
+        g.addLocation("Kothrud", 380, 400);
+        g.addLocation("Aundh", 520, 250);
+        g.addEdge("PICT College", "Swargate", 4);
+        g.addEdge("PICT College", "Deccan", 2);
+        g.addEdge("Swargate", "Deccan", 1);
+        g.addEdge("Swargate", "Pune Station", 5);
+        g.addEdge("Deccan", "Pune Station", 8);
+        g.addEdge("Deccan", "Kothrud", 10);
+        g.addEdge("Pune Station", "Kothrud", 2);
+        g.addEdge("Pune Station", "Aundh", 6);
+        g.addEdge("Kothrud", "Aundh", 3);
 
         staticFiles.location("/public");
-
         get("/api/graph", (req, res) -> {
             res.type("application/json");
-            return graph.toJson();
+            return g.toJson();
         });
-
         post("/api/find-route", (req, res) -> {
             res.type("application/json");
-            String source = req.queryParams("source");
-            String destination = req.queryParams("destination");
-
-            if (source == null || destination == null) {
-                res.status(400);
-                return "{\"error\":\"Missing source or destination\"}";
-            }
-
-            return resultToJson(graph.findShortestPath(source, destination));
+            String s = req.queryParams("source"), d = req.queryParams("destination");
+            if (s == null || d == null)
+                return "{\"error\":\"fail\"}";
+            String t = req.queryParams("traffic"), w = req.queryParams("weather"), e = req.queryParams("edge");
+            double tm = "light".equals(t) ? 1.1
+                    : "moderate".equals(t) ? 1.3 : "heavy".equals(t) ? 1.6 : "jam".equals(t) ? 2.0 : 1.0;
+            double wm = "rain".equals(w) ? 1.2 : "heavy-rain".equals(w) ? 1.5 : "fog".equals(w) ? 1.35 : 1.0;
+            return resultToJson(g.findShortestPath(s, d, tm, wm, e));
         });
-
-        System.out.println("Smart Pune Navigator running at http://localhost:4567");
     }
 
     static String resultToJson(Map<String, Object> r) {
         StringBuilder sb = new StringBuilder("{");
+        sb.append("\"totalDistance\":").append(r.get("totalDistance")).append(",");
         sb.append("\"path\":[");
-        @SuppressWarnings("unchecked")
         List<String> path = (List<String>) r.get("path");
         for (int i = 0; i < path.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append("\"").append(path.get(i)).append("\"");
+            sb.append("\"").append(path.get(i)).append("\"").append(i < path.size() - 1 ? "," : "");
         }
-        sb.append("],");
-        sb.append("\"totalDistance\":").append(r.get("totalDistance")).append(",");
-        sb.append("\"trace\":[");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> trace = (List<Map<String, Object>>) r.get("trace");
-        for (int t = 0; t < trace.size(); t++) {
-            if (t > 0) sb.append(",");
-            Map<String, Object> step = trace.get(t);
-            sb.append("{\"node\":\"").append(step.get("node")).append("\"");
-            sb.append(",\"distance\":").append(step.get("distance"));
-            sb.append(",\"relaxations\":[");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> relaxes = (List<Map<String, Object>>) step.get("relaxations");
-            for (int j = 0; j < relaxes.size(); j++) {
-                if (j > 0) sb.append(",");
-                Map<String, Object> rl = relaxes.get(j);
-                sb.append("{\"from\":\"").append(rl.get("from")).append("\"");
-                sb.append(",\"to\":\"").append(rl.get("to")).append("\"");
-                sb.append(",\"weight\":").append(rl.get("weight"));
-                sb.append(",\"total\":").append(rl.get("total"));
-                sb.append(",\"updated\":").append(rl.get("updated"));
-                sb.append("}");
-            }
-            sb.append("]}");
-        }
-        sb.append("],");
-        sb.append("\"shortestPathEdges\":[");
-        @SuppressWarnings("unchecked")
+        sb.append("],\"shortestPathEdges\":[");
         List<String> edges = (List<String>) r.get("shortestPathEdges");
         for (int i = 0; i < edges.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append("\"").append(edges.get(i)).append("\"");
+            sb.append("\"").append(edges.get(i)).append("\"").append(i < edges.size() - 1 ? "," : "");
+        }
+        sb.append("],\"trace\":[");
+        List<Map<String, Object>> trace = (List<Map<String, Object>>) r.get("trace");
+        for (int i = 0; i < trace.size(); i++) {
+            Map<String, Object> step = trace.get(i);
+            sb.append("{\"node\":\"").append(step.get("node")).append("\",\"distance\":").append(step.get("distance"))
+                    .append(",\"relaxations\":[");
+            List<Map<String, Object>> rels = (List<Map<String, Object>>) step.get("relaxations");
+            for (int j = 0; j < rels.size(); j++) {
+                Map<String, Object> rel = rels.get(j);
+                sb.append("{\"from\":\"").append(rel.get("from")).append("\",\"to\":\"").append(rel.get("to"))
+                        .append("\",\"weight\":").append(rel.get("weight"))
+                        .append(",\"total\":").append(rel.get("total")).append(",\"updated\":")
+                        .append(rel.get("updated")).append("}").append(j < rels.size() - 1 ? "," : "");
+            }
+            sb.append("]}").append(i < trace.size() - 1 ? "," : "");
         }
         sb.append("]}");
         return sb.toString();

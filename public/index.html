@@ -5,8 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Pune Navigator</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Using Google Font 'Outfit' for a modern, sleek tech look -->
+    <link rel="stylesheet" href="style.css?v=3">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
@@ -55,7 +54,6 @@
         <!-- Interactive Map Canvas -->
         <main class="main-content">
             <div class="graph-section">
-                <!-- A soft grid backdrop for the map -->
                 <div class="map-grid"></div>
                 <svg id="graph-svg" class="interactive-map"></svg>
                 <div id="selection-prompt" class="selection-prompt">
@@ -63,7 +61,7 @@
                 </div>
             </div>
 
-            <!-- Floating Sidebar overlay on top left -->
+            <!-- Floating Sidebar overlay on bottom left -->
             <aside class="floating-controls glass-panel">
                 <div class="panel selection-panel">
                     <h2>Plan Your Route</h2>
@@ -79,25 +77,85 @@
                             <select id="dest-select"></select>
                         </div>
                     </div>
+
+                    <!-- Traffic & Weather Conditions -->
+                    <div class="conditions-section">
+                        <div class="conditions-header" id="conditions-toggle">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                                height="16">
+                                <path
+                                    d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" />
+                            </svg>
+                            <span>Road Conditions</span>
+                            <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" width="14" height="14">
+                                <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                        </div>
+                        <div class="conditions-body" id="conditions-body">
+                            <div class="condition-row">
+                                <label for="traffic-select">
+                                    <span class="condition-icon traffic-icon">🚗</span>
+                                    Traffic
+                                </label>
+                                <select id="traffic-select">
+                                    <option value="none">None</option>
+                                    <option value="light">Light (+10%)</option>
+                                    <option value="moderate">Moderate (+30%)</option>
+                                    <option value="heavy">Heavy (+60%)</option>
+                                    <option value="jam">Jam (+100%)</option>
+                                </select>
+                            </div>
+                            <div class="condition-row">
+                                <label for="weather-select">
+                                    <span class="condition-icon weather-icon">🌤</span>
+                                    Weather
+                                </label>
+                                <select id="weather-select">
+                                    <option value="clear">Clear</option>
+                                    <option value="rain">Rain (+20%)</option>
+                                    <option value="heavy-rain">Heavy Rain (+50%)</option>
+                                    <option value="fog">Fog (+35%)</option>
+                                </select>
+                            </div>
+                            <div class="condition-row edge-picker-row">
+                                <label for="edge-select">
+                                    <span class="condition-icon">🛣</span>
+                                    Apply to Route
+                                </label>
+                                <select id="edge-select">
+                                    <option value="all">All Routes</option>
+                                </select>
+                            </div>
+                            <button class="btn-condition" id="apply-conditions-btn">Apply Conditions</button>
+                            <button class="btn-condition btn-condition-reset" id="reset-conditions-btn">Reset
+                                All</button>
+                        </div>
+                    </div>
+
                     <button id="find-route-btn" class="btn-primary">
                         Find Shortest Route
                     </button>
-                    <!-- Small instruction label -->
                     <p class="helper-text">You can also directly click the points on the canvas.</p>
                 </div>
             </aside>
         </main>
     </div>
 
-    <!-- Centered Modal for Results Overlay -->
+    <!-- Result Modal -->
     <div id="modal-overlay" class="modal-overlay hidden">
         <div id="result-wrapper" class="result-wrapper glass-panel hidden">
             <div class="result-header">
                 <div class="result-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
-                    </svg>
-                    <h2>Route Found</h2>
+                    <div class="result-icon-wrap">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18l6-6-6-6"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2>Route Found</h2>
+                        <p class="result-subtitle">Optimal path via Dijkstra's Algorithm</p>
+                    </div>
                 </div>
                 <button id="close-modal" class="btn-close" aria-label="Close">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -105,21 +163,28 @@
                     </svg>
                 </button>
             </div>
-
             <div class="result-body">
                 <div class="route-info-col">
-                    <!-- Distance highlights -->
                     <div class="route-summary">
-                        <div class="route-distance" id="route-distance"></div>
-                        <p class="route-path" id="route-path"></p>
+                        <div class="route-stat-row">
+                            <div class="route-stat">
+                                <span class="stat-label">Total Distance</span>
+                                <div class="route-distance" id="route-distance"></div>
+                            </div>
+                            <div class="route-stat" id="conditions-stat" style="display:none;">
+                                <span class="stat-label">Active Conditions</span>
+                                <div class="conditions-badge" id="active-conditions-badge"></div>
+                            </div>
+                        </div>
+                        <div class="route-path-wrap">
+                            <span class="stat-label">Route Path</span>
+                            <p class="route-path" id="route-path"></p>
+                        </div>
                     </div>
                     <button class="btn-secondary" id="action-replan">Plan Another Route</button>
                 </div>
-
-                <!-- Trace Information inside Modal -->
                 <div class="trace-section">
                     <h3>Algorithm Trace</h3>
-                    <p class="trace-subtitle">Dijkstra's step-by-step execution path</p>
                     <div id="trace-steps" class="trace-steps"></div>
                 </div>
             </div>
